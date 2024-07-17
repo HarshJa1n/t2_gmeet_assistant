@@ -116,10 +116,10 @@ class GMeetBot:
             )
             ask_to_join_button.click()
 
-            join_button = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
-            )
-            join_button.click()
+            # join_button = WebDriverWait(self.driver, 30).until(
+            #     EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
+            # )
+            # join_button.click()
             logging.info("Successfully joined the meeting")
         except TimeoutException as e:
             logging.error(f"Timeout while joining the meeting: {str(e)}")
