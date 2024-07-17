@@ -24,6 +24,7 @@ class GMeetBot:
         self.driver = None
         self.is_recording = False
         self.frames = []
+        self.audio = pyaudio.PyAudio()
 
     async def setup_driver(self):
         chrome_options = Options()
@@ -33,76 +34,33 @@ class GMeetBot:
 
     async def login_to_google(self):
         try:
-            # self.driver.get("https://accounts.google.com")
-            
-            # # Enter email
-            # email_field = WebDriverWait(self.driver, 20).until(
-            #     EC.presence_of_element_located((By.NAME, "identifier"))
-            # )
-            # email_field.send_keys(self.email)
-            
-            # next_button = WebDriverWait(self.driver, 10).until(
-            #     EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Next')]"))
-            # )
-            # next_button.click()
-            
-            # # Enter password
-            # password_field = WebDriverWait(self.driver, 20).until(
-            #     EC.presence_of_element_located((By.NAME, "password"))
-            # )
-            # password_field.send_keys(self.password)
-            
-            # signin_button = WebDriverWait(self.driver, 10).until(
-            #     EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Sign in')]"))
-            # )
-            # signin_button.click()
-            
-            # # Wait for the login process to complete
-            # WebDriverWait(self.driver, 30).until(
-            #     EC.presence_of_element_located((By.ID, "gb"))
-            # )
             self.driver.get("https://accounts.google.com")
 
-            # Wait for and fill in the email field
             email_field = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "identifier"))
             )
             email_field.send_keys(self.email)
-            # email_field.submit()
             next_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Next')]"))
             )
             next_button.click()
 
-            # Wait for and fill in the password field
             password_field = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "Passwd"))
             )
             password_field.send_keys(self.password)
-            # password_field.submit()
             next_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Next')]"))
             )
             next_button.click()
-            # signin_button = WebDriverWait(self.driver, 10).until(
-            #     EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Sign in')]"))
-            # )
-            # signin_button.click()
 
-            # Wait for login to complete
             WebDriverWait(self.driver, 10).until(
                 EC.url_contains("myaccount.google.com")
             )
 
             logging.info("Successfully logged in to Google")
-        except TimeoutException as e:
-            logging.error(f"Timeout during login process: {str(e)}")
-            raise
-        except NoSuchElementException as e:
-            logging.error(f"Element not found during login process: {str(e)}")
-            raise
         except Exception as e:
-            logging.error(f"Unexpected error during login process: {str(e)}")
+            logging.error(f"Error during login process: {str(e)}")
             raise
 
     async def join_meet(self):
@@ -110,28 +68,67 @@ class GMeetBot:
         try:
             self.driver.get(self.meet_link)
             
-            # Wait for and click the "Join now" button
-            ask_to_join_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Ask to join')]"))
+            join_now_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
             )
-            ask_to_join_button.click()
+            logging.info("Join button found")
+            join_now_button.click()
 
-            # join_button = WebDriverWait(self.driver, 30).until(
-            #     EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
-            # )
-            # join_button.click()
+            #             # ask_to_join_button = WebDriverWait(self.driver, 10).until(
+#             #     EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Ask to join')]"))
+#             # )
+#             # ask_to_join_button.click()
             logging.info("Successfully joined the meeting")
-        except TimeoutException as e:
-            logging.error(f"Timeout while joining the meeting: {str(e)}")
-            raise
-        except NoSuchElementException as e:
-            logging.error(f"Join button not found: {str(e)}")
-            raise
         except Exception as e:
-            logging.error(f"Unexpected error while joining the meeting: {str(e)}")
+            logging.error(f"Error while joining the meeting: {str(e)}")
             raise
 
-    # ... (rest of the methods remain the same)
+    async def start_recording(self):
+        logging.info("Starting audio recording...")
+        self.is_recording = True
+        stream = self.audio.open(format=pyaudio.paInt16, channels=1, rate=44100, input=True, frames_per_buffer=1024)
+        
+        while self.is_recording:
+            data = stream.read(1024)
+            self.frames.append(data)
+            logging.info("Recording in progress...")
+            await asyncio.sleep(1)  # Log every second
+
+        stream.stop_stream()
+        stream.close()
+        logging.info("Recording stopped")
+
+    def stop_recording(self):
+        self.is_recording = False
+        logging.info("Stopping recording...")
+
+    async def send_audio_to_api(self):
+        logging.info("Sending audio to API for transcription...")
+        wf = wave.open("output.wav", "wb")
+        wf.setnchannels(1)
+        wf.setsampwidth(self.audio.get_sample_size(pyaudio.paInt16))
+        wf.setframerate(44100)
+        wf.writeframes(b''.join(self.frames))
+        wf.close()
+
+        with open("output.wav", "rb") as audio_file:
+            files = {"file": audio_file}
+            response = requests.post(self.transcribe_api_url, files=files)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.error(f"Error in API response: {response.status_code}, {response.text}")
+            return None
+
+    async def save_transcription(self, transcription):
+        logging.info("Saving transcription...")
+        response = requests.post(self.save_transcription_url, json=transcription)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.error(f"Error saving transcription: {response.status_code}, {response.text}")
+            return None
 
     async def run(self):
         try:
@@ -139,26 +136,27 @@ class GMeetBot:
             await self.login_to_google()
             await self.join_meet()
             
-            # Start recording
+            logging.info("Starting recording task...")
             recording_task = asyncio.create_task(self.start_recording())
             
-            # Record for 60 seconds (adjust as needed)
+            logging.info("Recording for 60 seconds...")
             await asyncio.sleep(60)
             
             self.stop_recording()
             await recording_task
             
-            # Send audio to API and get transcription
             transcription = await self.send_audio_to_api()
-            logging.info(f"Transcription: {json.dumps(transcription, indent=2)}")
-            
-            # Save transcription and get link
-            save_response = await self.save_transcription(transcription)
-            logging.info(f"Transcription saved. View link: {save_response.get('view_link')}")
+            if transcription:
+                logging.info(f"Transcription: {json.dumps(transcription, indent=2)}")
+                
+                save_response = await self.save_transcription(transcription)
+                if save_response:
+                    logging.info(f"Transcription saved. View link: {save_response.get('view_link')}")
+            else:
+                logging.error("Failed to get transcription")
         except Exception as e:
             logging.error(f"Error in run method: {str(e)}")
         finally:
             if self.driver:
                 self.driver.quit()
-
-# Remove the main function from this file as it's not needed here
+            self.audio.terminate()
