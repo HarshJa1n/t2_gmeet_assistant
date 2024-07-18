@@ -227,20 +227,71 @@ class GMeetBot:
             logging.error(f"Error during login process: {str(e)}")
             raise
 
+    # async def join_meet(self):
+    #     logging.info("Joining the meeting...")
+    #     try:
+    #         self.driver.get(self.meet_link)
+            
+    #         join_now_button = WebDriverWait(self.driver, 10).until(
+    #             EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
+    #         )
+    #         logging.info("Join button found")
+    #         join_now_button.click()
+    #         logging.info("Successfully joined the meeting")
+    #     except Exception as e:
+    #         logging.error(f"Error while joining the meeting: {str(e)}")
+    #         raise
     async def join_meet(self):
         logging.info("Joining the meeting...")
         try:
             self.driver.get(self.meet_link)
             
-            join_now_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
-            )
-            logging.info("Join button found")
-            join_now_button.click()
-            logging.info("Successfully joined the meeting")
+            # Turn off camera and microphone before joining
+            await self.toggle_audio_video()
+
+            # Check for "Join now" button
+            try:
+                join_now_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Join now')]"))
+                )
+                logging.info("Join now button found")
+                join_now_button.click()
+            except TimeoutException:
+                # If "Join now" is not found, look for "Ask to join" button
+                try:
+                    ask_to_join_button = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Ask to join')]"))
+                    )
+                    logging.info("Ask to join button found")
+                    ask_to_join_button.click()
+                except TimeoutException:
+                    logging.error("Neither 'Join now' nor 'Ask to join' button found")
+                    raise
+
+            logging.info("Successfully initiated joining the meeting")
         except Exception as e:
             logging.error(f"Error while joining the meeting: {str(e)}")
             raise
+
+    async def toggle_audio_video(self):
+        try:
+            # Wait for the media control buttons to be visible
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div[role='button'][data-is-muted]"))
+            )
+
+            # Find all media control buttons
+            media_buttons = self.driver.find_elements(By.CSS_SELECTOR, "div[role='button'][data-is-muted]")
+
+            for button in media_buttons:
+                is_muted = button.get_attribute("data-is-muted")
+                if is_muted == "false":
+                    button.click()
+                    logging.info(f"Turned off {'microphone' if 'microphone' in button.get_attribute('aria-label').lower() else 'camera'}")
+
+            logging.info("Audio and video turned off before joining")
+        except Exception as e:
+            logging.error(f"Error while toggling audio/video: {str(e)}")
 
 
     async def start_recording(self):
